@@ -27,24 +27,30 @@ import com.leapmotion.leap.Listener;
 import com.leapmotion.leap.Tool;
 
 public class LeapListener extends Listener {
-	
-	private ScratchSocket socket;
-	
+		
 	private static final String OS = System.getProperty("os.name");
-			
-	private static final String[] HAND_NAMES = {
+		
+	public StringBuilder data = new StringBuilder();
+	
+	private static Frame currentFrame;
+	
+	private Hand currentHand;
+	private Hand[] hands = new Hand[2];
+	private boolean[] handOpen = new boolean[2];
+	private static int[] handIds = new int[2];
+	private final String[] HAND_NAMES = {
 		"hand-one",
 		"hand-two"
 	};
 	
-	private static int[] handIds = new int[2];
-	
-	private static final String[] TOOL_NAMES = {
+	public Tool[] tools = new Tool[2];
+	public final String[] TOOL_NAMES = {
 		"tool-one",
 		"tool-two"
 	};
-		
-	private static final String[] FINGER_NAMES = {
+	
+	public Finger[] fingers = new Finger[10];		
+	public final String[] FINGER_NAMES = {
 		"finger-one",
 		"finger-two",
 		"finger-three",
@@ -57,22 +63,9 @@ public class LeapListener extends Listener {
 		"finger-ten"
 	};
 	
-	public Hand[] hands = new Hand[2];
-	public Tool[] tools = new Tool[2];
-	public Finger[] fingers = new Finger[10];
-	
 	public boolean isConnected;
 	
-	public void setSocket(ScratchSocket s) {
-		socket = s;
-	}
-	
 	public void onInit(Controller controller) {
-
-	}
-	
-	public void onConnect(Controller controller) {
-		
 		// Initialize arrays
 		for (int i = 0; i < hands.length; i++)
 			hands[i] = new Hand();
@@ -80,14 +73,19 @@ public class LeapListener extends Listener {
 			tools[i] = new Tool();
 		for (int i = 0; i < fingers.length; i++)
 			fingers[i] = new Finger();
+	}
+	
+	public void onConnect(Controller controller) {
 		isConnected = true;
-		
+		BubbleTip.create("Leap Motion Controller connected");
 		Main.refresh();
 		
 	}
 	
 	public void onDisconnect(Controller controller) {
-
+		isConnected = false;
+		BubbleTip.create("Leap Motion Controller disconnected");
+		Main.refresh();
 	}
 	
 	public void onExit(Controller controller) {
@@ -95,18 +93,17 @@ public class LeapListener extends Listener {
 	}
 	
 	public void onFrame(Controller controller) {
-				
-		Frame frame = controller.frame();
 		
-		boolean[] handOpen = new boolean[2];
+		currentFrame = controller.frame();
+		
 		boolean handsFlipped = false;
 		
 		for (int i = 0; i < 2; i++) {
-			Hand hand = frame.hands().get(i);
-			if (hand.isValid()) {
+			currentHand = currentFrame.hands().get(i);
+			if (currentHand.isValid()) {
 				
 				for (int n = 0; n < 2; n++) {
-					if (hand.id() == handIds[n] && n != i)
+					if (currentHand.id() == handIds[n] && n != i)
 						handsFlipped = true;
 				}
 				
@@ -114,14 +111,14 @@ public class LeapListener extends Listener {
 				if (handsFlipped)
 					num = ((num == 0) ? 1 : 0);
 				
-				hands[num] = hand;
-				handIds[num] = hand.id();
+				hands[num] = currentHand;
+				handIds[num] = currentHand.id();
 				
-				if (!hand.tools().empty()) {
-					tools[num] = hand.tools().get(0);
+				if (!currentHand.tools().empty()) {
+					tools[num] = currentHand.tools().get(0);
 				}
 												
-				FingerList fings = hand.fingers();
+				FingerList fings = currentHand.fingers();
 				
 				if (fings.count() >= 3)
 					handOpen[num] = true;
@@ -145,41 +142,38 @@ public class LeapListener extends Listener {
 			}
 		}
 		
-		if (isConnected && socket.isConnected) {
-						
-			String response = "{\"method\":\"update\",\"params\":[";
+		if (isConnected) {
+			
+			data = new StringBuilder();
 						
 			for (int i = 0; i < hands.length; i++) {
 				if (OS.contains("Linux")) {
-					response += "[\"" + HAND_NAMES[i] + "-x\",\"" + Math.round(hands[i].palmPosition().getX()) + "\"],";
-					response += "[\"" + HAND_NAMES[i] + "-y\",\"" + Math.round((hands[i].palmPosition().getY() - 220) * 1.6) + "\"],";
-					response += "[\"" + HAND_NAMES[i] + "-z\",\"" + Math.round(hands[i].palmPosition().getZ()) + "\"],";
+					data.append(HAND_NAMES[i] + "-x " + Math.round(hands[i].palmPosition().getX()) + "\n");
+					data.append(HAND_NAMES[i] + "-y " + Math.round((hands[i].palmPosition().getY() - 220) * 1.6) + "\n");
+					data.append(HAND_NAMES[i] + "-z " + Math.round(hands[i].palmPosition().getZ()) + "\n");
 				} else {
-					response += "[\"" + HAND_NAMES[i] + "-x\",\"" + Math.round(hands[i].stabilizedPalmPosition().getX()) + "\"],";
-					response += "[\"" + HAND_NAMES[i] + "-y\",\"" + Math.round((hands[i].stabilizedPalmPosition().getY() - 220) * 1.6) + "\"],";
-					response += "[\"" + HAND_NAMES[i] + "-z\",\"" + Math.round(hands[i].stabilizedPalmPosition().getZ()) + "\"],";
+					data.append(HAND_NAMES[i] + "-x " + Math.round(hands[i].stabilizedPalmPosition().getX()) + "\n");
+					data.append(HAND_NAMES[i] + "-y " + Math.round((hands[i].stabilizedPalmPosition().getY() - 220) * 1.6) + "\n");
+					data.append(HAND_NAMES[i] + "-z " + Math.round(hands[i].stabilizedPalmPosition().getZ()) + "\n");
 				}
-				response += "[\"" + HAND_NAMES[i] + "-visible\"," + hands[i].isValid() + "],";
-				response += "[\"" + HAND_NAMES[i] + "-open\"," + handOpen[i] + "],";
+				data.append(HAND_NAMES[i] + "-visible " + hands[i].isValid() + "\n");
+				data.append(HAND_NAMES[i] + "-open " + handOpen[i] + "\n");
 			}
-						
+					
 			for (int i = 0; i < fingers.length; i++) {
-				response += "[\"" + FINGER_NAMES[i] + "-x\",\"" + Math.round(fingers[i].stabilizedTipPosition().getX()) + "\"],";
-				response += "[\"" + FINGER_NAMES[i] + "-y\",\"" + Math.round((fingers[i].stabilizedTipPosition().getY() - 220) * 1.6) + "\"],";
-				response += "[\"" + FINGER_NAMES[i] + "-z\",\"" + Math.round(fingers[i].stabilizedTipPosition().getZ()) + "\"],";
-				response += "[\"" + FINGER_NAMES[i] + "-visible\"," + fingers[i].isValid() + "],";
+				data.append(FINGER_NAMES[i] + "-x " + Math.round(fingers[i].stabilizedTipPosition().getX()) + "\n");
+				data.append(FINGER_NAMES[i] + "-y " + Math.round((fingers[i].stabilizedTipPosition().getY() - 220) * 1.6) + "\n");
+				data.append(FINGER_NAMES[i] + "-z " + Math.round(fingers[i].stabilizedTipPosition().getZ()) + "\n");
+				data.append(FINGER_NAMES[i] + "-visible " + fingers[i].isValid() + "\n");
 			}
 			
 			for (int i = 0; i < tools.length; i++) {
-				response += "[\"" + TOOL_NAMES[i] + "-x\",\"" + Math.round(tools[i].stabilizedTipPosition().getX()) + "\"],";
-				response += "[\"" + TOOL_NAMES[i] + "-y\",\"" + Math.round((tools[i].stabilizedTipPosition().getY() - 220) * 1.6) + "\"],";
-				response += "[\"" + TOOL_NAMES[i] + "-z\",\"" + Math.round(tools[i].stabilizedTipPosition().getZ()) + "\"],";
-				response += "[\"" + TOOL_NAMES[i] + "-visible\"," + tools[i].isValid() + "],";
+				data.append(TOOL_NAMES[i] + "-x " + Math.round(tools[i].stabilizedTipPosition().getX()) + "\n");
+				data.append(TOOL_NAMES[i] + "-y " + Math.round((tools[i].stabilizedTipPosition().getY() - 220) * 1.6) + "\n");
+				data.append(TOOL_NAMES[i] + "-z " + Math.round(tools[i].stabilizedTipPosition().getZ()) + "\n");
+				data.append(TOOL_NAMES[i] + "-visible " + tools[i].isValid() + "\n");
 			}
-			
-			response += "]}\n";
-			
-			socket.send(response);
+						
 		}
 		
 	}

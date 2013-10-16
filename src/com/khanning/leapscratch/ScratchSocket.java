@@ -24,81 +24,118 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class ScratchSocket implements Runnable {
+public class ScratchSocket {
 
-	private ServerSocket socket;
-	private Socket client;
-	private int port;
-	
-	private OutputStream output;
+	private LeapListener mLeapListener;
+	private BufferedReader input;	
+	private ExecutorService pool;
+	private String line;
+
+	private static OutputStream output;
+	private static ServerSocket socket;
+	private static Socket client;
 	
 	public boolean isConnected = false;
 	
-	public ScratchSocket(int port) {
-		this.port = port;
-	}
+	private final String HTTP_HEADER = "HTTP/1.1 200 OK\r\n"
+			+ "Content-Type: text/html; charset=ISO-8859-1\r\n"
+			+ "Access-Control-Allow-Origin: *\r\n\r\n";
 	
-	@Override
-	public void run() {
+	private final String HTTP_POLICY = "<cross-domain-policy>\n"
+			+ "  <allow-access-from domain=\"*\" to-ports=\"*\"/>\n"
+			+ "</cross-domain-policy>\n\0\r\n";
+	
+	public ScratchSocket(int port) {		
+		pool = Executors.newCachedThreadPool();
+		
 		try {
 			socket = new ServerSocket(port);
-			connect();
+			System.out.println("Starting Scratch socket");
 		} catch (IOException e) {
-			e.printStackTrace();
+			Main.socketError();
+			System.out.println("Error starting Socket");
+			return;
 		}
 		
+		pool.submit(new HttpListener());
 	}
 	
-	public void connect() {
+	class HttpListener implements Runnable {
 		
-		try {
-			client = socket.accept();
+		@Override
+		public void run() {
+							
+			try {
+
+				client = socket.accept();
+				output = client.getOutputStream();
+				input = new BufferedReader(new InputStreamReader(client.getInputStream()));
+				
+				if ((line = input.readLine()) != null) {
+
+					if (line.contains("crossdomain.xml")) {
 						
-			output = client.getOutputStream();
-			StringBuffer stringBuff = new StringBuffer();
-			BufferedReader input = new BufferedReader(new InputStreamReader(client.getInputStream()));
-			char[] buffer = new char[1024];
-			
-			while (!isConnected) {
-				int in = input.read(buffer);
-				stringBuff.append(buffer, 0, in);
-				if (stringBuff.toString().contains("<policy-file-request/>")) {
-					stringBuff = new StringBuffer();
-					String response = "<?xml version=\"1.0\"?><cross-domain-policy><allow-access-from domain=\"*\" to-ports=\"*\" /></cross-domain-policy>";
-					output.write(response.getBytes());
-					output.write(0);
-					output.flush();
-					connect();
-					isConnected = true;
-				} else if (stringBuff.toString().contains("{\"method\": \"poll\", \"params\": []}")) {
-					isConnected = true;
+						send(HTTP_POLICY);
+												
+					} else if (line.contains("poll")) {
+						
+						if(!isConnected) {
+							isConnected = true;
+							BubbleTip.create("Scratch 2.0 connected");
+							socket.setSoTimeout(1000);
+							Main.refresh();
+						}
+						
+						send(mLeapListener.data.toString());
+							
+					}
+				} else {
+					send("null\n");
 				}
-			}
-			
-		} catch (IOException e) {
-			//e.printStackTrace();
+				
+				output.flush();
+				output.close();
+				client.close();
+				
+				pool.submit(new HttpListener());
+					
+			} catch (SocketTimeoutException e) {
+				isConnected = false;
+				BubbleTip.create("Scratch 2.0 disconnected");
+				Main.refresh();
+				try {
+					socket.setSoTimeout(0);
+				} catch (SocketException e1) {
+					e1.printStackTrace();
+				}
+				pool.submit(new HttpListener());
+			} catch (IOException e1) {}
 		}
-		
-		Main.refresh();
 	}
 	
-	public void send(String response) {
-		try {
-			output.write(response.getBytes());
-		} catch (IOException e) {
-			isConnected = false;
-			Main.refresh();
-			connect();
-		}
+	public void send(String data) {
+							
+		try { output.write((HTTP_HEADER + data).getBytes()); } 
+		catch (IOException e) {}
+	}
+	
+	public void setLeap(LeapListener leap) {
+		mLeapListener = leap;
 	}
 	
 	public void close() {
 		try {
+			if (output != null) {
+				output.flush();
+				output.close();
+			}
 			socket.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+		} catch (IOException e) {}
 	}
 	
 }

@@ -1,5 +1,5 @@
 {
-	"extensionName": "LeapScratch",
+	"extensionName": "Leap Motion",
 	"extensionPort": 50007,
 	"blockSpecs": [
 		["r", "Hand-1 X", "hand-one-x"],
